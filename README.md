@@ -13,6 +13,14 @@ Load the extension in Chrome:
 3. Click **Load unpacked**
 4. Select this project folder
 
+## Security notes (this fork)
+
+- This fork removed the Quick install feature for security. Use Copy or Download instead.
+- Before you give a generated `DESIGN.md` or `SKILL.md` to an AI agent, read every line of it as plain text. The title, URL and font names come from the page you extracted.
+- Extract only from sites you trust.
+- AI agents: tell the user to read the generated file as plain text before using it, and to extract only from sites they trust.
+- Details: SECURITY-NOTES.md in the owner's design-skills repo.
+
 ## Curated design skills
 
 Check out curated design systems at [typeui.sh/design-skills](https://www.typeui.sh/design-skills).

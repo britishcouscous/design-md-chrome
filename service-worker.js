@@ -50,11 +50,9 @@ async function handleExtraction(message) {
   const validation = validateMarkdownOutput(mode, markdown);
   const filename = mode === "skill" ? "SKILL.md" : "DESIGN.md";
 
-  if (message.persistOutputMode !== false) {
-    await chrome.storage.local.set({
-      outputMode: mode
-    });
-  }
+  await chrome.storage.local.set({
+    outputMode: mode
+  });
 
   return {
     mode,
