@@ -6,27 +6,10 @@ const state = {
   lastResult: null
 };
 
-const QUICK_INSTALL_PROVIDERS = {
-  claude: {
-    label: "Claude Code",
-    targetDir: ".claude/skills/design-system"
-  },
-  codex: {
-    label: "Codex",
-    targetDir: ".agents/skills/design-system"
-  },
-  cursor: {
-    label: "Cursor",
-    targetDir: ".cursor/skills/design-system"
-  }
-};
-
 const modeButtons = Array.from(document.querySelectorAll("[data-mode]"));
 const refreshBtn = document.getElementById("refreshBtn");
 const downloadBtn = document.getElementById("downloadBtn");
 const copyBtn = document.getElementById("copyBtn");
-const quickInstallButtons = Array.from(document.querySelectorAll(".quick-install-btn"));
-const quickInstallResultEl = document.getElementById("quickInstallResult");
 const helpBtn = document.getElementById("helpBtn");
 const helpPanel = document.getElementById("helpPanel");
 const helpContentEl = document.getElementById("helpContent");
@@ -48,15 +31,6 @@ for (const button of modeButtons) {
     state.mode = mode;
     syncModeUi();
     runExtraction().catch((error) => setStatus(toErrorText(error), true));
-  });
-}
-
-for (const button of quickInstallButtons) {
-  button.addEventListener("click", () => {
-    const providerId = button.dataset.provider;
-    installQuick(providerId).catch((error) => {
-      setQuickInstallResult(`Quick install failed: ${toErrorText(error)}`, true);
-    });
   });
 }
 
@@ -107,7 +81,6 @@ async function init() {
   const data = await chrome.storage.local.get(["outputMode"]);
   state.mode = data.outputMode === "skill" ? "skill" : "design";
   syncModeUi();
-  updateQuickInstallUi();
   await runExtraction();
 }
 
@@ -139,8 +112,6 @@ async function runExtraction() {
 
     renderValidationIssues(response.validation);
     clearStatus();
-    clearQuickInstallResult();
-    updateQuickInstallUi();
     if (!helpPanel.hidden) {
       renderGenerationExplanation();
     }
@@ -174,7 +145,6 @@ function setBusy(isBusy) {
   for (const button of modeButtons) {
     button.disabled = isBusy;
   }
-  updateQuickInstallUi();
 }
 
 function renderValidationIssues(validation) {
@@ -225,8 +195,6 @@ function syncModeUi() {
     const isActive = button.dataset.mode === state.mode;
     button.classList.toggle("is-active", isActive);
   }
-  clearQuickInstallResult();
-  updateQuickInstallUi();
   if (!helpPanel.hidden) {
     renderGenerationExplanation();
   }
@@ -301,139 +269,4 @@ function escapeHtml(value) {
 function clearStatus() {
   statusEl.textContent = "";
   statusEl.hidden = true;
-}
-
-async function installQuick(providerId) {
-  const provider = QUICK_INSTALL_PROVIDERS[providerId];
-  if (!provider) {
-    setQuickInstallResult("Unknown provider.", true);
-    return;
-  }
-  if (state.busy) {
-    return;
-  }
-  clearQuickInstallResult();
-  clearStatus();
-
-  const relativePath = `${provider.targetDir}/SKILL.md`;
-  setBusy(true);
-
-  try {
-    const skillMarkdown = await fetchSkillMarkdownForInstall();
-
-    if (typeof window.showDirectoryPicker !== "function") {
-      await fallbackQuickInstall(provider, relativePath, skillMarkdown);
-      return;
-    }
-
-    try {
-      const rootHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-      await writeFileToProject(rootHandle, relativePath, skillMarkdown);
-      setQuickInstallResult(`Installed for ${provider.label} at ${provider.targetDir}/`);
-    } catch (error) {
-      if (isAbortError(error)) {
-        setQuickInstallResult("Quick install cancelled.");
-        return;
-      }
-      await fallbackQuickInstall(provider, relativePath, skillMarkdown, error);
-    }
-  } finally {
-    setBusy(false);
-  }
-}
-
-async function fetchSkillMarkdownForInstall() {
-  const response = await chrome.runtime.sendMessage({
-    type: "RUN_EXTRACTION",
-    mode: "skill",
-    persistOutputMode: false
-  });
-
-  if (!response || !response.ok || !response.markdown) {
-    throw new Error(response?.error || "Could not generate SKILL.md for quick install.");
-  }
-  return response.markdown;
-}
-
-async function writeFileToProject(rootHandle, relativePath, content) {
-  const parts = relativePath.split("/").filter(Boolean);
-  const fileName = parts.pop();
-  if (!fileName) {
-    throw new Error("Invalid target path.");
-  }
-
-  let currentDir = rootHandle;
-  for (const segment of parts) {
-    currentDir = await currentDir.getDirectoryHandle(segment, { create: true });
-  }
-
-  const fileHandle = await currentDir.getFileHandle(fileName, { create: true });
-  const writable = await fileHandle.createWritable();
-  await writable.write(content);
-  await writable.close();
-}
-
-async function fallbackQuickInstall(provider, relativePath, skillMarkdown, originalError) {
-  let copied = false;
-  let downloaded = false;
-
-  try {
-    await navigator.clipboard.writeText(skillMarkdown);
-    copied = true;
-  } catch (_) {
-    copied = false;
-  }
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: "DOWNLOAD_MARKDOWN",
-      mode: "skill",
-      filename: "SKILL.md",
-      markdown: skillMarkdown
-    });
-    downloaded = Boolean(response?.ok);
-  } catch (_) {
-    downloaded = false;
-  }
-
-  if (copied || downloaded) {
-    setQuickInstallResult(
-      `${copied ? "Copied content." : "Could not copy."} ${downloaded ? "Downloaded SKILL.md." : "Could not auto-download."} Move it to <project>/${relativePath} for ${provider.label}.`,
-      false
-    );
-    return;
-  }
-
-  const reason = originalError ? ` (${toErrorText(originalError)})` : "";
-  setQuickInstallResult(`Quick install failed${reason}.`, true);
-}
-
-function updateQuickInstallUi() {
-  const enabled = !state.busy;
-
-  for (const button of quickInstallButtons) {
-    button.disabled = !enabled;
-  }
-}
-
-function setQuickInstallResult(text, isError = false) {
-  const value = String(text || "").trim();
-  if (!value) {
-    clearQuickInstallResult();
-    return;
-  }
-
-  quickInstallResultEl.hidden = false;
-  quickInstallResultEl.textContent = value;
-  quickInstallResultEl.classList.toggle("error", Boolean(isError));
-}
-
-function clearQuickInstallResult() {
-  quickInstallResultEl.hidden = true;
-  quickInstallResultEl.textContent = "";
-  quickInstallResultEl.classList.remove("error");
-}
-
-function isAbortError(error) {
-  return error && typeof error === "object" && error.name === "AbortError";
 }
